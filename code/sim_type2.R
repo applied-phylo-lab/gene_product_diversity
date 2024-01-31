@@ -126,32 +126,34 @@ tm.type.2 <- function(nloci,u,par,Ne,alpha,trans,C,epsilon=c(0,0),gamma_0,gamma,
 }
 
 # Test using arbitrary numbers
-gt=c(1,1,1,1,1);effect=rep(1,length(gt));cis=cis.gv(gt,effect)
-trans=10;C=c(1,1);epsilon=c(0,0);beta=beta.calc.type.2(cis,trans,C,epsilon)
-alpha=1;gamma_0=0;gamma=c(1,100);z=g2p(alpha,beta,gamma_0,gamma)
-par=list(NULL,c(1,5),1e-3);Ne=1e3;w=fitness.prod(z,par);pr=fix.prob(1,w,Ne)
+n0=1;n1=50;nloci=n0+n1
+gt=c(rep(0,n0),rep(1,n1));effect=rep(1,length(gt));cis=cis.gv(gt,effect)
+trans=100;C=c(1,1);epsilon=c(0,0);beta=beta.calc.type.2(cis,trans,C,epsilon)
+alpha=10;gamma_0=0;gamma=c(1,100);z=g2p(alpha,beta,gamma_0,gamma)
+par=list(NULL,c(alpha/gamma[1],1),1e-1);Ne=1e3;w=fitness.prod(z,par);pr=fix.prob(1,w,Ne)
 z;w;pr*2e3
 
-nloci=10;u=c(1e-9,1e-9)
+u=c(1e-9,1e-9)
 mat=tm.type.2(nloci,u,par,Ne,alpha,trans,C,epsilon,gamma_0,gamma)
 start=rep(0,nloci+1);start[nloci+1]=1
 T=1e8;distr=start%*%(mat %^% T)
-gv=mean(distr*(0:(nloci)));beta=beta.calc.type.2(gv/nloci,trans,C,epsilon);z=g2p(alpha,beta,gamma_0,gamma);z[3]/(z[2]+z[3])
+gv=sum(distr*(0:(nloci)));beta=beta.calc.type.2(gv/nloci,trans,C,epsilon);z=g2p(alpha,beta,gamma_0,gamma);z;z[3]/(z[2]+z[3])
 
 # Parameter range
-Ne.all=c(1e2,1e3,1e4,1e5)
+Ne.all=c(1e2,1e3,1e4,1e5) # Effective population sizes to consider
 alpha.all=exp(0:5) # Optimum to be set as alpha/gamma_1
-nloci.all=10*(1:5)
-u=c(1e-9,1e-9)
-trans=5
-C=c(1,1)
-epsilon=c(1,1)*1e-3
+nloci.all=10*(1:5) # Number of cis-loci (should be greater than editing-type)
+u=c(1e-9,1e-9) # Per-locus mutation rates
+trans=100 # Trans-genotypic value (should be high enough such that P_0 is much smaller than P_0+P_1+P_2)
+C=c(1,1) # Scaling between cis- genotypic value and regulatory efffect
+epsilon=c(1,1)*1e-3 # Non-spcific interaction strength
 gamma_0=0;gamma_1=1 # Decay rate of functional isoform
 gamma_2.all=(1:5)*20 # Decay rate of mis-spliced isoform, reflecting efficiency of stop-mediated degradation
 T=1e8 # Time (may not be enough to reach stationary distribution, final dependent on initial state)
 sig=10 # Width of fitness function for P_0
 lambda=1e-3 # Strength of selection on P_1
 
+# Get a data matrix containing parameter combinations to consider
 comb.all=rep(0,4)
 for(Ne in Ne.all){
 	for(alpha in alpha.all){
@@ -176,15 +178,15 @@ for(i in 1:nrow(comb.all)){
 	par=list(NULL,c(opt,sig),lambda)
 	mat=tm.type.2(nloci,u,par,Ne,alpha,trans,C,epsilon,gamma_0,gamma)
 	start=rep(0,nloci+1);start[nloci+1]=1
-	distr=start%*%(mat %^% T)
-	v_mean=sum((distr*(0:nloci))/nloci)
+	distr=start%*%(mat %^% T) # Stationary distribution of cis- genotypic value
+	v_mean=sum((distr*(0:nloci))/nloci) # Mean cis- genotypic value
 	if(v_mean>1){
 		v_mean=1
 	}
-	beta_mean=beta.calc.type.2(v_mean,trans,C)
-	phe=g2p(alpha,beta_mean,gamma_0,gamma)
-	out[i,1]=v_mean;out[i,2:3]=phe[2:3];out[i,4]=phe[3]/(phe[2]+phe[3])
-	if(is.complex(out[i,1])==TRUE|is.complex(out[i,2])==TRUE|is.complex(out[i,3])==TRUE|is.complex(out[i,4])==TRUE){
+	beta_mean=beta.calc.type.2(v_mean,trans,C) # Calculate the corresponding beta
+	phe=g2p(alpha,beta_mean,gamma_0,gamma) # Calculate the corresponding phenotype
+	out[i,1]=v_mean;out[i,2:3]=phe[2:3];out[i,4]=phe[3]/(phe[2]+phe[3]) # Write results
+	if(is.complex(out[i,1])==TRUE|is.complex(out[i,2])==TRUE|is.complex(out[i,3])==TRUE|is.complex(out[i,4])==TRUE){ # Report if complex numbers appear
 		break
 	}
 }
@@ -196,7 +198,7 @@ write.table(out,file="out_as.txt",sep="\t")
 
 d<-read.table("out_as.txt",sep="\t")
 
-# Check effect of Ne, nloci, and degradation efficiency
+# Check effect of Ne, nloci, and degradation efficiency on minor isoform fraction
 alpha.test=1;gamma_2.test=20
 sub=which((d$alpha==alpha.test)&(d$gamma_2==gamma_2.test))
 dsub=d[sub,]
@@ -207,11 +209,12 @@ g=g+theme_classic()
 g=g+xlab(expression(paste("Lo",g[10],N[e])))+ylab("AS level")
 lt=expression(paste("Number of ",italic(cis),"- loci"))
 g=g+labs(color=lt)
-g=g+ylim(c(0,0.006))
+g=g+ylim(c(0,0.005))
 g=g+theme(axis.text=element_text(size=12),axis.title=element_text(size=15),legend.text=element_text(size=15),legend.title=element_text(size=15),legend.key.size=unit(0.7,'cm')) # Adjust font size of axis labels, axis text, and legend
 fn=paste("plot_as_exp_a",alpha.test,"r",gamma_2.test,".pdf",sep="")
 ggsave(fn,plot=g,width=6,height=5)
 
+# Check expression level's effect on minor isoform fraction
 l.test=10
 sub=which((d$l==l.test)&(d$gamma_2==gamma_2.test))
 dsub=d[sub,]
@@ -223,7 +226,7 @@ g=g+theme_classic()
 g=g+xlab(expression(paste("Lo",g[10],N[e])))+ylab("AS level")
 lt=expression(paste(italic(ln),P["0.opt"]))
 g=g+labs(color=lt)
-g=g+ylim(c(0,0.006))
+g=g+ylim(c(0,0.005))
 g=g+theme(axis.text=element_text(size=12),axis.title=element_text(size=15),legend.text=element_text(size=15),legend.title=element_text(size=15),legend.key.size=unit(0.7,'cm')) # Adjust font size of axis labels, axis text, and legend
 fn=paste("plot_as_l",l.test,"r",gamma_2.test,".pdf",sep="")
 ggsave(fn,plot=g,width=6,height=5)

@@ -128,44 +128,43 @@ tm.type.2 <- function(nloci,u,par,Ne,alpha,trans,C,epsilon=c(0,0),gamma_0,gamma,
 # Parameter values
 # Gene-specific parameters sampled from pre-chosen distributions
 T=1e8 # Number of time steps to run for each gene/modification event
-u=c(1e-9,1e-9)
-gamma_0=0;trans=5;epsilon=c(1e-3,1e-3);C=c(1,1)
+u=c(1e-9,1e-9);gamma_0=0;trans=100;epsilon=c(1e-3,1e-3);C=c(1,1) # Parameters that are constant across genes
 
-ngene=2e4
+ngene=2e4 # Number of genes to consider
 alpha.all=exp(rnorm(ngene,mean=0,sd=1)) # Expression rate, sampled from log-normal distribution
 nloci.all=as.integer(rgamma(ngene,shape=3,scale=5))+1 # Number of cis- loci, sampled from a gamma distribution (mean~15, peak near mean)
 gamma_1.all=rep(1,ngene) # Decay rate of I_0, distribution type TBD
-gamma_2.all=rep(20,ngene) # Decay rate of I_1, distribution type TBD
+gamma_2.all=rep(100,ngene) # Decay rate of I_1, distribution type TBD
 sig.all=1/(10^(rnorm(ngene,mean=-1,sd=0.1))) # Width of Gaussian fitness function (for P_0 or P_1); sample "importance" first, then take reciprocal to be width
 lambda.all=rep(1e-3,ngene) # Strength of selection on P_1; distribution type TBD
 
-Ne=1e3
-comb.all=data.frame(alpha.all,nloci.all,C.all,gamma_1.all,gamma_2.all,sig.all,lambda.all)
+Ne=1e3 # Effective population size
+comb.all=data.frame(alpha.all,nloci.all,gamma_1.all,gamma_2.all,sig.all,lambda.all)
 out=matrix(0,nrow=nrow(comb.all),ncol=4)
 for(i in 1:ngene){
 	alpha=comb.all[i,1]
 	nloci=comb.all[i,2]
-	gamma_1=comb.all[i,4]
-	gamma_2=comb.all[i,5]
+	gamma_1=comb.all[i,3]
+	gamma_2=comb.all[i,4]
 	gamma=c(gamma_1,gamma_2)
-	sig=comb.all[i,6]
-	lambda=comb.all[i,7]
+	sig=comb.all[i,5]
+	lambda=comb.all[i,6]
 	par=list(NULL,c(alpha/gamma_1,sig),lambda)
 	mat=tm.type.2(nloci,u,par,Ne,alpha,trans,C,epsilon,gamma_0,gamma)
 	start=rep(0,nloci+1);start[nloci+1]=1
 	distr=start%*%(mat %^% T)
 	v_sample=sample(0:nloci,1,prob=distr)/nloci # Sample a cis- genotypic value from the distribution
-	beta_sample=beta.calc.type.2(v_sample,trans,C,epsilon)
+	beta_sample=beta.calc.type.2(v_sample,trans,C,epsilon) # Calculate beta
 	phe=g2p(alpha,beta_sample,gamma_0,gamma) # Get a final phenotype
-	out[i,1]=v_sample;out[i,2:3]=phe[2:3];out[i,4]=phe[3]/(phe[2]+phe[3])
+	out[i,1]=v_sample;out[i,2:3]=phe[2:3];out[i,4]=phe[3]/(phe[2]+phe[3]) # Write results
 }
 colnames(out)=c("gv","P_1","P_2","lv")
 d=data.frame(comb.all,out)
 write.table(d,file="distr_mix_as.txt",sep="\t")
 
-id.cutoff=0 # Detectability cutoff
-dsub=d[which(d[,1]*d[,11]>id.cutoff),]
-g=ggplot(dsub,aes(x=lv))+geom_histogram(binwidth=0.01)
+id.cutoff=1e-3 # Detectability cutoff
+dsub=d[which(d[,1]*d[,10]>id.cutoff),]
+g=ggplot(dsub,aes(x=lv))+geom_histogram(binwidth=0.0002)
 g=g+theme_classic()
 g=g+xlab("AS level")+ylab("Gene number")
 g=g+theme(axis.text=element_text(size=12),axis.title=element_text(size=15))

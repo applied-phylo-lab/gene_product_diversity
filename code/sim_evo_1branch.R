@@ -1,13 +1,12 @@
-# Basic setting
-# 2 isoforms (I_0 functional, I_1 deleterious), all loci have equal effects
+# Simulate evolution of isoform abundances along a branch
+# Parameters other than cis- genotypic value can also evolve
 
 library(expm)
 library(ggplot2)
-#library(MASS)
 
 # Calculate normalized cis-genotypic value
 # Input: genotype (a vector of 0 and 1), effect sizes of effector allele at all loci (a vector)
-cis.gv <- function(gt,effect){
+cis.gv <- function(gt,effect=1){
 	v=sum(gt*effect)
 	vmax=sum(effect)
 	return(v/vmax)
@@ -122,97 +121,87 @@ tm <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=0,gamma_0,gamma_1,eq=N
 	return(mat)
 }
 
+# Function to simulate evolution under selection on isoform abundances (2 isoforms, cis- loci have equal effect)
+# For one gene only, trans- factor assumed unchangeable
+# Parameters: values of constant parameters (a vector), starting state (a vector), mutation parameters (a list), selection parameters (a list), Ne, time
+# Constants: nloci, trans, C, epsilon, gamma_0, gamma_1
+# Starting state: cis- genotypic value (a number), alpha (a number)
+# Mutation parameters: cis- loci (a vector containing u01 and u10), alpha (a vector containing rate and effect SD)
+# Selection parameters in the same format as used for fitness.prod
+sim.evo <- function(constant,start,U,selection,Ne,T){
+	nmut=rpois(1,lambda=U[[2]][1]*2*Ne*T) # Number of mutations that would occur (should be <T, otherwise the model doesn't work)
+	if(nmut>=T){
+		return("error")
+	}else{
+		if(nmut>0){
+			nloci=constant[[1]];trans=constant[[2]];C=constant[[3]];epsilon=constant[[4]];gamma_0=constant[[5]];gamma_1=constant[[6]]
+			tmut=sort(sample(1:T,nmut)) # Time points at which mutations happen
+			v=start[1];alpha=start[2] # Set initial values of cis- gv and alpha
+			distr=rep(0,nloci+1);distr[v+1]=1 # Set initial distribution of cis- gv
+			v.all=rep(0,nmut);alpha.all=rep(0,nmut) # vectors storing all values of cis- gv an alpha
+			mat=tm(nloci,U[[1]],selection,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1) # Set initial transition matrix
+			t.last=0
+			for(i in 1:nmut){
+				t=tmut[i]
+				distr=distr%*%(mat %^% (t-t.last)) # Calculate distribution at the time point under consideration
+				v=sample(0:nloci,1,prob=distr);v.all[i]=v # Sample a value from the distribution
+				distr=rep(0,nloci+1);distr[v+1]=1 # Reset the distribution
+				beta=beta.calc(v/nloci,trans,C,epsilon) # Calculate the corresponding beta
+				z=g2p(alpha,beta,gamma_0,gamma_1) # Calculate the corresponding phenotype
+				alpha.mut=exp(log(alpha)+rnorm(1,mean=0,sd=U[[2]][2]))
+				z.mut=g2p(alpha.mut,beta,gamma_0,gamma_1)
+				fp=fix.prob(fitness.prod(z,selection),fitness.prod(z.mut,selection),Ne)
+				if.fix=rbinom(n=1,size=1,prob=fp)
+				if(if.fix==1){
+					alpha=alpha.mut
+					mat=tm(nloci,U[[1]],selection,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1) # Re-calculate transition matrix
+				}
+				alpha.all[i]=alpha
+			}
+			return(list(v.all,alpha.all))
+		}else{
+			return("no.mut")
+		}
+	}
+}
 
+Nrep=100
+T=1e8
 Ne.all=c(1e2,1e3,1e4,1e5)
 alpha.all=exp(0:5)
 nloci.all=1:10
-u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5))
-trans.all=(1:10)/5
-C=1
-gamma_0=1;gamma_1=1
-T=1e8 # Time (may not be enough to reach stationary distribution, final dependent on initial state)
-sig=10 # Width of fitness function for P_0
-lambda=1e-3 # Strength of selection on P_1
-
-comb.all=rep(0,6)
+comb.all=rep(0,3)
 for(Ne in Ne.all){
 	for(alpha in alpha.all){
 		for(nloci in nloci.all){
-			for(trans in trans.all){
-				for(i in 1:nrow(u.all)){
-					row=c(Ne,alpha,nloci,trans,u.all[i,])
-					comb.all=rbind(comb.all,row)
-				}
-			}
+			row=c(Ne,alpha,nloci)
+			comb.all=rbind(comb.all,row)
 		}
 	}
 }
 comb.all=comb.all[2:nrow(comb.all),]
 rownames(comb.all)=NULL
 
-# Get expected mean phenotype when I_0 is functional and I_1 is deleterious
-# Output data matrix (columns: mean normalized cis- genotypic value, isoform abundances and modification frequency based on the mean gv)
-out=matrix(0,nrow=nrow(comb.all),ncol=4)
-for(i in 1:nrow(comb.all)){
-	Ne=comb.all[i,1]
-	alpha=comb.all[i,2]
-	nloci=comb.all[i,3]
-	trans=comb.all[i,4]
-	u=comb.all[i,5:6]
-	opt=alpha/gamma_0 # Make optimal P_0 the value reached in the absence of mis-splicing
-	par=list(c(opt,sig),lambda)
-	mat=tm(nloci,u,par,Ne,alpha,trans,C,gamma_0,gamma_1)
-	start=rep(0,nloci+1);start[1]=1
-	distr=start%*%(mat %^% T)
-	v_mean=sum((distr*(0:nloci))/nloci)
-	beta_mean=beta.calc(v_mean,trans,C)
-	phe=g2p(alpha,beta_mean,gamma_0,gamma_1)
-	out[i,1]=v_mean;out[i,2:3]=phe;out[i,4]=phe[2]/sum(phe)
-	if(is.complex(out[i,1])==TRUE|is.complex(out[i,2])==TRUE|is.complex(out[i,3])==TRUE|is.complex(out[i,4])==TRUE){
-		break
+U=list(c(1e-9,1e-9),c(1e-8,0.1))
+trans=1;C=1;epsilon=1e-2;gamma_0=1;gamma_1=1
+sig=10 # Width of fitness function for P_0
+lambda=1e-3 # Strength of selection on P_1
+
+v.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep);alpha.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep)
+for(c in 1:nrow(comb.all)){
+	Ne=comb.all[c,1]
+	start=c(0,comb.all[c,2])
+	constant=c(comb.all[c,3],trans,C,epsilon,gamma_0,gamma_1)
+	selection=list(c(comb.all[c,2]/gamma_0,sig),lambda)
+	for(n in 1:Nrep){
+		out=sim.evo(constant,start,U,selection,Ne,T)
+		if(length(out)==2){
+			v.out[c,n]=out[[1]][length(out[[1]])]
+			alpha.out[c,n]=out[[1]][length(out[[2]])]
+		}
 	}
 }
 
-out=data.frame(comb.all,out)
-colnames(out)=c("Ne","alpha","l","Q","u01","u10","v","P_0","P_1","frac")
-out$alpha=log(out$alpha)
-write.table(out,file="out_basic.txt",sep="\t")
 
-# Plot a subset
-d<-read.table("out_basic.txt",sep="\t",header=TRUE)
 
-# Check effect of Ne, nloci, and mutational bias
-sub=which((d$alpha==0)&(d$Q==1)&(d$u01==d$u10)) # Rows with mutational bias
-#sub=which((d$alpha==0)&(d$Q==1)&(d$u01>d$u10)) # Rows with mutational bias towards the effector allele
-#sub=which((d$alpha==0)&(d$Q==1)&(d$u01<d$u10)) # Rows with mutational bias towards the null allele
-dsub=d[sub,]
-dsub$l=factor(dsub$l,levels=sort(unique(dsub$l)),ordered=TRUE)
-g<-ggplot(dsub,aes(x=log10(Ne),y=frac,colour=l))
-g=g+geom_point()+geom_line()+scale_color_brewer(palette="Paired")
-g=g+theme_classic()
-g=g+xlab(expression(paste("Lo",g[10],N[e])))+ylab("Modification level")
-lt=expression(paste("Number of ",italic(cis),"- loci"))
-g=g+labs(color=lt)
-g=g+ylim(c(0,0.15))
-g=g+theme(axis.text=element_text(size=12),axis.title=element_text(size=15),legend.text=element_text(size=15),legend.title=element_text(size=15),legend.key.size=unit(0.7,'cm')) # Adjust font size of axis labels, axis text, and legend
-ggsave("plot_basic.pdf",plot=g,width=6,height=5)
-#ggsave("plot_basic_mb1.pdf",plot=g,width=6,height=5)
-#ggsave("plot_basic_mb2.pdf",plot=g,width=6,height=5)
-
-# Check effect of expression level
-l.test=2
-sub=which((d$l==l.test)&(d$Q==1)&(d$u01==d$u10))
-dsub=d[sub,]
-dsub$alpha=dsub$alpha-log(gamma_0) # convert to optimum of P_0
-dsub$alpha=factor(dsub$alpha,levels=sort(unique(dsub$alpha)),ordered=TRUE)
-g<-ggplot(dsub,aes(x=log10(Ne),y=frac,colour=alpha))
-g=g+geom_point()+geom_line(linewidth=1.5)+scale_color_brewer(palette="Paired")
-g=g+theme_classic()
-g=g+xlab(expression(paste("Lo",g[10],N[e])))+ylab("Modification level")
-lt=expression(paste(italic(ln),P["0.opt"]))
-g=g+labs(color=lt)
-g=g+ylim(c(0,0.1))
-g=g+theme(axis.text=element_text(size=12),axis.title=element_text(size=15),legend.text=element_text(size=15),legend.title=element_text(size=15),legend.key.size=unit(0.7,'cm')) # Adjust font size of axis labels, axis text, and legend
-fn=paste("plot_basic_l",l.test,".pdf",sep="")
-ggsave(fn,plot=g,width=6,height=5)
 

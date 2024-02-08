@@ -55,18 +55,18 @@ fitness.del <- function(z,par){
 
 # Overall fitness as a product of fitness w/ respect to each isoform
 # Input: isoform abundances (a vector), selection parameter (a list; vector-->stabilizing, number-->deleterious, NULL=neutral/equivalent to I_0), whether each modified isoform is functionally equivalent to I_0 (a vector, 1 means equivalent to I_0)
-fitness.prod <- function(z,par,eq=NULL){
+fitness.prod <- function(z,selection,eq=NULL){
 	w=rep(0,length(z))
-	type=lengths(par) # Type of selection, which corresponds to number of selection parameters
+	type=lengths(selection) # Type of selection, which corresponds to number of selection parameters
 	if(length(eq)>0){
 		z[1]=z[1]+sum(z[which(eq==1)])
 	}
 	for(i in 1:length(z)){
 		if(type[i]==2){
-			w[i]=fitness.stab(z[i],par[[i]][1],par[[i]][2])
+			w[i]=fitness.stab(z[i],selection[[i]][1],selection[[i]][2])
 		}else{
 			if(type[i]==1){
-				w[i]=fitness.del(z[i],par[[i]])
+				w[i]=fitness.del(z[i],selection[[i]])
 			}else{
 				w[i]=1
 			}
@@ -96,19 +96,19 @@ fix.prob <- function(wa,wm,Ne){
 
 # Obtain transition matrix given other parameters (type-2 modification)
 # Input: number of cis- loci, mutation rates (a vector, elements being u01 and u10, respectively; 2*Ne*u should not exceed 1), selection parameter (a list), effective population size, other parameters (alpha,trans,C,gamma_0,gamma_1,epsilon,eq)
-tm.type.2 <- function(nloci,u,par,Ne,alpha,trans,C,epsilon=c(0,0),gamma_0,gamma,eq=NULL){
+tm.type.2 <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=c(0,0),gamma_0,gamma,eq=NULL){
 	mat=matrix(0,nrow=nloci+1,ncol=nloci+1)
 	for(i in 1:nrow(mat)){
 		v1=(i-1)/nloci # cis- genotypic value for beta_1
 		beta1=beta.calc.type.2(v1,trans,C,epsilon)
 		z1=g2p(alpha,beta1,gamma_0,gamma) # Remember to use the generic version of g2p()
-		w1=fitness.prod(z1,par,eq)
+		w1=fitness.prod(z1,selection,eq)
 		for(j in 1:ncol(mat)){
 			if(abs(i-j)==1){ # Consider adjescent states only
 				v2=(j-1)/nloci
 				beta2=beta.calc.type.2(v2,trans,C,epsilon)
 				z2=g2p(alpha,beta2,gamma_0,gamma)
-				w2=fitness.prod(z2,par,eq)
+				w2=fitness.prod(z2,selection,eq)
 				fp=fix.prob(w1,w2,Ne)
 				if(i<j){
 					uij=2*Ne*(nloci-(i-1))*u[1]

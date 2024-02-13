@@ -137,7 +137,7 @@ sim.evo <- function(constant,start,U,selection,Ne,T){
 			nloci=constant[[1]];trans=constant[[2]];C=constant[[3]];epsilon=constant[[4]];gamma_0=constant[[5]];gamma_1=constant[[6]]
 			tmut=sort(sample(1:T,nmut)) # Time points at which mutations happen
 			v=start[1];alpha=start[2] # Set initial values of cis- gv and alpha
-			distr=rep(0,nloci+1);distr[v+1]=1 # Set initial distribution of cis- gv
+			distr=rep(0,nloci+1);distr[1]=1 # Set initial distribution of cis- gv
 			v.all=rep(0,nmut);alpha.all=rep(0,nmut) # vectors storing all values of cis- gv an alpha
 			mat=tm(nloci,U[[1]],selection,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1) # Set initial transition matrix
 			t.last=0
@@ -197,11 +197,51 @@ for(c in 1:nrow(comb.all)){
 		out=sim.evo(constant,start,U,selection,Ne,T)
 		if(length(out)==2){
 			v.out[c,n]=out[[1]][length(out[[1]])]
-			alpha.out[c,n]=out[[1]][length(out[[2]])]
+			alpha.out[c,n]=out[[2]][length(out[[2]])]
 		}
 	}
 }
 
+write.table(data.frame(comb.all,v.out),file="sim_basic_v.txt",sep="\t")
+write.table(data.frame(comb.all,alpha.out),file="sim_basic_alpha.txt",sep="\t")
+alpha.norm.out=log(alpha.out)
+write.table(data.frame(comb.all,alpha.norm.out),file="sim_basic_alpha_norm.txt",sep="\t")
+
+# Convert to modification levels
+v.norm.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep)
+lv.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep)
+for(c in 1:nrow(comb.all)){
+	v.norm.out[c,]=v.out[c,]/comb.all[c,3]
+	for(n in 1:Nrep){
+		cis=v.norm.out[c,n]
+		beta=beta.calc(cis,trans,C,epsilon)
+		z=g2p(alpha.out[c,n],beta,gamma_0,gamma_1)
+		lv.out[c,n]=z[2]/(z[1]+z[2])
+	}
+}
+write.table(data.frame(comb.all,v.norm.out),file="sim_basic_v_norm.txt",sep="\t")
+write.table(data.frame(comb.all,lv.out),file="sim_basic_lv.txt",sep="\t")
+
+# Extract information
+out=matrix(0,nrow=nrow(comb.all),ncol=7)
+colnames(out)=c("v.mean","v.var","alpha.mean","alpha.var","frac.med","cor.v","cor.frac")
+for(c in 1:nrow(comb.all)){
+	out[c,1]=mean(v.norm.out[c,])
+	out[c,2]=var(v.norm.out[c,])
+	out[c,3]=mean(alpha.norm.out[c,])
+	out[c,4]=var(alpha.norm.out[c,])
+	out[c,5]=median(lv.out[c,])
+	if(var(alpha.norm.out[c,])>0){
+		if(var(v.norm.out[c,])>0){
+			out[c,6]=cor(v.norm.out[c,],alpha.norm.out[c,],method="spearman")
+		}
+		if(var(lv.out[c,])>0){
+			out[c,7]=cor(lv.out[c,],alpha.norm.out[c,],method="spearman")
+		}
+	}
+}
+fn=paste("sum_sim_basic_",lambda,".txt",sep="")
+write.table(data.frame(comb.all,out),file=fn,sep="\t")
 
 
 

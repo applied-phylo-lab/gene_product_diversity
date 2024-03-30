@@ -1,8 +1,9 @@
-# Simulate evolution of isoform abundances along a branch
-# Parameters other than cis- genotypic value can also evolve
+# Simulate cis-trans coevolution
 
 library(expm)
 library(ggplot2)
+
+setwd("/Users/daohanji/Desktop/gene_product_diversity/out/")
 
 # Calculate normalized cis-genotypic value
 # Input: genotype (a vector of 0 and 1), effect sizes of effector allele at all loci (a vector)
@@ -121,127 +122,96 @@ tm <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=0,gamma_0,gamma_1,eq=N
 	return(mat)
 }
 
-# Function to simulate evolution under selection on isoform abundances (2 isoforms, cis- loci have equal effect)
-# For one gene only, trans- factor assumed unchangeable
-# Parameters: values of constant parameters (a vector), starting state (a vector), mutation parameters (a list), selection parameters (a list), Ne, time
-# Constants: nloci, trans, C, epsilon, gamma_0, gamma_1
-# Starting state: cis- genotypic value (a number), alpha (a number)
-# Mutation parameters: cis- loci (a vector containing u01 and u10), alpha (a vector containing rate and effect SD)
-# Selection parameters in the same format as used for fitness.prod
-sim.evo <- function(constant,start,U,selection,Ne,T){
-	nmut=rpois(1,lambda=U[[2]][1]*2*Ne*T) # Number of mutations that would occur (should be <T, otherwise the model doesn't work)
+# Simulate cis-trans coevolution
+# Two isoforms per gene, one function and one deleterious
+sim.evo<-function(type.all,nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start){
+	nmut=rpois(1,lambda=u.trans[1]*2*Ne*T)
 	if(nmut>=T){
 		return("error")
 	}else{
-		if(nmut>0){
-			nloci=constant[[1]];trans=constant[[2]];C=constant[[3]];epsilon=constant[[4]];gamma_0=constant[[5]];gamma_1=constant[[6]]
-			tmut=sort(sample(1:T,nmut)) # Time points at which mutations happen
-			v=start[1];alpha=start[2] # Set initial values of cis- gv and alpha
-			distr=rep(0,nloci+1);distr[1]=1 # Set initial distribution of cis- gv
-			v.all=rep(0,nmut);alpha.all=rep(0,nmut) # vectors storing all values of cis- gv an alpha
-			mat=tm(nloci,U[[1]],selection,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1) # Set initial transition matrix
-			t.last=0
-			for(i in 1:nmut){
-				t=tmut[i]
-				distr=distr%*%(mat %^% (t-t.last)) # Calculate distribution at the time point under consideration
-				v=sample(0:nloci,1,prob=distr);v.all[i]=v # Sample a value from the distribution
-				distr=rep(0,nloci+1);distr[v+1]=1 # Reset the distribution
-				beta=beta.calc(v/nloci,trans,C,epsilon) # Calculate the corresponding beta
-				z=g2p(alpha,beta,gamma_0,gamma_1) # Calculate the corresponding phenotype
-				alpha.mut=exp(log(alpha)+rnorm(1,mean=0,sd=U[[2]][2]))
-				z.mut=g2p(alpha.mut,beta,gamma_0,gamma_1)
-				fp=fix.prob(fitness.prod(z,selection),fitness.prod(z.mut,selection),Ne)
-				if.fix=rbinom(n=1,size=1,prob=fp)
-				if(if.fix==1){
-					alpha=alpha.mut
-					mat=tm(nloci,U[[1]],selection,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1) # Re-calculate transition matrix
-				}
-				alpha.all[i]=alpha
+		ngene=length(type.all)
+		tm.all=list()
+		distr.all=list()
+		v.all=start[[1]]
+		trans=start[[2]]
+		beta.all=rep(0,ngene)
+		z.all=matrix(0,nrow=ngene,ncol=2)
+		for(i in 1:ngene){
+			tm.all[[i]]=tm(nloci.all[i],u.cis,selection.all[[i]],Ne,alpha.all[i],trans,C,epsilon,gamma_0.all[i],gamma_1.all[i])
+			distr.all[[i]]=rep(0,nloci.all[i]+1);distr.all[[i]][v.all[i]+1]=1
+			beta.all[i]=beta.calc(v.all[i]/nloci.all[i],trans,C,epsilon)
+			z.all[i,]=g2p(alpha.all[i],beta.all[i],gamma_0.all[i],gamma_1.all[i])
+		}
+		tmut=sort(sample(1:T,nmut))
+		t.last=0
+		for(j in 1:nmut){
+			t=tmut[j]
+			w0=1
+			for(i in 1:ngene){
+				distr.all[[i]]=distr.all[[i]]%*%(tm.all[[i]] %^% (t-t.last)) # Calculate distribution at the time point under consideration
+				v.all[i]=sample(0:nloci.all[i],1,prob=distr.all[[i]])
+				w0=w0*fitness.prod(z.all[[i]],selection.all[[i]])
 			}
-			return(list(v.all,alpha.all))
-		}else{
-			return("no.mut")
+			trans.mut=exp(log(trans)+rnorm(1,mean=0,sd=u.trans[2]))
+			w1=1
+			beta.mut=rep(0,ngene)
+			z.mut=matrix(0,nrow=ngene,ncol=2)
+			for(i in 1:ngene){
+				beta.mut[i]=beta.calc(v.all[i]/nloci.all[i],trans.mut,C,epsilon)
+				z.mut[i,]=g2p(alpha.all[i],beta.mut[i],gamma_0.all[i],gamma_1.all[i])
+				w1=w1*fitness.prod(z.mut[[i]],selection.all[[i]])
+			}
+			fp=fix.prob(w0,w1,Ne)
+			if.fix=rbinom(n=1,size=1,prob=fp)
+			if(if.fix==1){
+				trans=trans.mut
+				beta.all=beta.mut
+				z.all=z.mut
+				for(i in 1:ngene){
+					tm.all[[i]]=tm(nloci.all[i],u.cis,selection.all[[i]],Ne,alpha.all[i],trans.mut,C,epsilon,gamma_0.all[i],gamma_1.all[i])
+				}
+			}
+			t.last=t
 		}
+		return(list(z.all,trans))
 	}
 }
 
-Nrep=100
-T=1e8
-Ne.all=c(1e2,1e3,1e4,1e5)
-alpha.all=exp(0:5)
-nloci.all=1:10
-comb.all=rep(0,3)
-for(Ne in Ne.all){
-	for(alpha in alpha.all){
-		for(nloci in nloci.all){
-			row=c(Ne,alpha,nloci)
-			comb.all=rbind(comb.all,row)
-		}
-	}
-}
-comb.all=comb.all[2:nrow(comb.all),]
-rownames(comb.all)=NULL
-
-U=list(c(1e-9,1e-9),c(1e-8,0.1))
-trans=1;C=1;epsilon=1e-2;gamma_0=1;gamma_1=1
-sig=10 # Width of fitness function for P_0
-lambda=1e-3 # Strength of selection on P_1
-
-v.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep);alpha.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep)
-for(c in 1:nrow(comb.all)){
-	Ne=comb.all[c,1]
-	start=c(0,comb.all[c,2])
-	constant=c(comb.all[c,3],trans,C,epsilon,gamma_0,gamma_1)
-	selection=list(c(comb.all[c,2]/gamma_0,sig),lambda)
-	for(n in 1:Nrep){
-		out=sim.evo(constant,start,U,selection,Ne,T)
-		if(length(out)==2){
-			v.out[c,n]=out[[1]][length(out[[1]])]
-			alpha.out[c,n]=out[[2]][length(out[[2]])]
-		}
+# Assign gene-specific parameters
+n1=100;n2=10;ngene=n1+n2
+type.all=c(rep(1,n1),rep(2,n2))
+nloci.all=sample(1:10,ngene,replace=TRUE)
+alpha.all=exp(rnorm(ngene,mean=0,sd=1));alpha.all=sort(alpha.all)
+gamma_0.all=rep(1,ngene) # Decay rate of I_0, distribution type TBD
+gamma_1.all=rep(1,ngene) # Decay rate of I_1, distribution type TBD
+sig.all=1/(10^(rnorm(ngene,mean=-1,sd=0.1))) # Strength of stabilizing selection on expression level
+lambda.all=rep(1e-3,ngene)
+selection.all=list()
+for(i in 1:ngene){
+	if(type.all[i]==1){ # Deleterious
+		selection.all[[i]]=list(c(alpha.all[i]/gamma_0.all[i],sig.all[i]),lambda.all[i])
+	}else{ # Required modification
+		selection.all[[i]]=list(lambda.all[i],c(alpha.all[i]/gamma_1.all[i],sig.all[i]))
 	}
 }
 
-write.table(data.frame(comb.all,v.out),file="sim_basic_v.txt",sep="\t")
-write.table(data.frame(comb.all,alpha.out),file="sim_basic_alpha.txt",sep="\t")
-alpha.norm.out=log(alpha.out)
-write.table(data.frame(comb.all,alpha.norm.out),file="sim_basic_alpha_norm.txt",sep="\t")
-
-# Convert to modification levels
-v.norm.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep)
-lv.out=matrix(0,nrow=nrow(comb.all),ncol=Nrep)
-for(c in 1:nrow(comb.all)){
-	v.norm.out[c,]=v.out[c,]/comb.all[c,3]
-	for(n in 1:Nrep){
-		cis=v.norm.out[c,n]
-		beta=beta.calc(cis,trans,C,epsilon)
-		z=g2p(alpha.out[c,n],beta,gamma_0,gamma_1)
-		lv.out[c,n]=z[2]/(z[1]+z[2])
+T=1e8 # Number of time steps to run for each gene/modification event
+Ne=1e3
+u.cis=c(1e-9,1e-9) # Mutation rate at cis- loci, elements representing mutation to effector ellele and to null allele, respectively
+u.trans=c(1e-8,1e-1) # Rate and SD of effect (log scale) of mutations affecting trans genotypic value
+C=1 # Affinity parameter, assumed as constant across genes
+epsilon=1e-3 # Non-specific modification intensity, assumed as constant across genes
+# Starting cis- and trans- genotypic values
+start=list(rep(0,ngene),1)
+for(i in 1:ngene){
+	if(type.all[i]==1){
+		start[[1]][i]=sample(0:(nloci.all[i]),1)
+	}else{
+		start[[1]][i]=nloci.all[i]
 	}
 }
-write.table(data.frame(comb.all,v.norm.out),file="sim_basic_v_norm.txt",sep="\t")
-write.table(data.frame(comb.all,lv.out),file="sim_basic_lv.txt",sep="\t")
 
-# Extract information
-out=matrix(0,nrow=nrow(comb.all),ncol=7)
-colnames(out)=c("v.mean","v.var","alpha.mean","alpha.var","frac.med","cor.v","cor.frac")
-for(c in 1:nrow(comb.all)){
-	out[c,1]=mean(v.norm.out[c,])
-	out[c,2]=var(v.norm.out[c,])
-	out[c,3]=mean(alpha.norm.out[c,])
-	out[c,4]=var(alpha.norm.out[c,])
-	out[c,5]=median(lv.out[c,])
-	if(var(alpha.norm.out[c,])>0){
-		if(var(v.norm.out[c,])>0){
-			out[c,6]=cor(v.norm.out[c,],alpha.norm.out[c,],method="spearman")
-		}
-		if(var(lv.out[c,])>0){
-			out[c,7]=cor(lv.out[c,],alpha.norm.out[c,],method="spearman")
-		}
-	}
-}
-fn=paste("sum_sim_basic_",lambda,".txt",sep="")
-write.table(data.frame(comb.all,out),file=fn,sep="\t")
-
-
+x=sim.evo(type.all,nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start)
+x[[2]]
+hist(x[[1]][,2]/(x[[1]][,2]+x[[1]][,1]),breaks=50)
 

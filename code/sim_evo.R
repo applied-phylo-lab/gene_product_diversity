@@ -201,11 +201,22 @@ u.cis=c(1e-9,1e-9) # Mutation rate at cis- loci, elements representing mutation 
 u.trans=c(1e-8,1e-1) # Rate and SD of effect (log scale) of mutations affecting trans genotypic value
 C=1 # Affinity parameter, assumed as constant across genes
 epsilon=1e-3 # Non-specific modification intensity, assumed as constant across genes
+
+# Null distribution of cis- genotypic value
+pgv=list()
+for(l in 1:10){
+	pgv[[l]]=rep(0,l+1)
+	for(i in 0:l){
+		pgv[[l]][i+1]=choose(l,i)
+	}
+	pgv[[l]]=pgv[[l]]/(sum(pgv[[l]]))
+}
+
 # Starting cis- and trans- genotypic values
 start=list(rep(0,ngene),1)
 for(i in 1:ngene){
 	if(type.all[i]==1){
-		start[[1]][i]=sample(0:(nloci.all[i]),1)
+		start[[1]][i]=sample(0:(nloci.all[i]),1,prob=pgv[[nloci.all[i]]])
 	}else{
 		start[[1]][i]=nloci.all[i]
 	}
@@ -214,4 +225,5 @@ for(i in 1:ngene){
 x=sim.evo(type.all,nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start)
 x[[2]]
 hist(x[[1]][,2]/(x[[1]][,2]+x[[1]][,1]),breaks=50)
+
 

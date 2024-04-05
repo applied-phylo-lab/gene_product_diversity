@@ -182,6 +182,15 @@ sim.evo.2<-function(type.all,nloci.all,alpha.all,gamma_0.all,gamma_1.all,selecti
 	}
 }
 
+T=1e8 # Number of time steps to run for each gene/modification event
+Ne=1e3
+u.cis=c(1e-9,1e-9) # Mutation rate at cis- loci, elements representing mutation to effector ellele and to null allele, respectively
+u.trans=c(1e-8,1e-1) # Rate and SD of effect (log scale) of mutations affecting trans genotypic value
+C=1 # Affinity parameter, assumed as constant across genes
+epsilon=1e-3 # Non-specific modification intensity, assumed as constant across genes
+# Selection on Q independent of focal modifications
+opt.trans=1;sig.trans=20
+
 # Assign gene-specific parameters
 n1=100;n2=0;ngene=n1+n2
 type.all=c(rep(1,n1),rep(2,n2))
@@ -200,27 +209,71 @@ for(i in 1:ngene){
 	}
 }
 
-T=1e8 # Number of time steps to run for each gene/modification event
-Ne=1e3
-u.cis=c(1e-9,1e-9) # Mutation rate at cis- loci, elements representing mutation to effector ellele and to null allele, respectively
-u.trans=c(1e-8,1e-1) # Rate and SD of effect (log scale) of mutations affecting trans genotypic value
-C=1 # Affinity parameter, assumed as constant across genes
-epsilon=1e-3 # Non-specific modification intensity, assumed as constant across genes
+# Null distribution of cis- genotypic value
+pgv=list()
+for(l in 1:10){
+	pgv[[l]]=rep(0,l+1)
+	for(i in 0:l){
+		pgv[[l]][i+1]=choose(l,i)
+	}
+	pgv[[l]]=pgv[[l]]/(sum(pgv[[l]]))
+}
+
 # Starting cis- and trans- genotypic values
 start=list(rep(0,ngene),1)
 for(i in 1:ngene){
 	if(type.all[i]==1){
-		start[[1]][i]=sample(0:(nloci.all[i]),1)
+		start[[1]][i]=sample(0:(nloci.all[i]),1,prob=pgv[[nloci.all[i]]])
 	}else{
 		start[[1]][i]=nloci.all[i]
 	}
 }
 
-# Selection on Q independent of focal modifications
-opt.trans=1;sig.trans=20
-
+# Test run
 x=sim.evo.2(type.all,nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start)
 x[[2]]
-hist(x[[1]][,2]/(x[[1]][,2]+x[[1]][,1]),breaks=50)
+hist(x[[1]][,2]/(x[[1]][,2]+x[[1]][,1]),breaks=20)
+# End-point fitness
+w=1
+for(i in 1:ngene){
+	w=w*fitness.prod(x[[1]][i,],selection.all[[i]])
+}
+w=w*fitness.stab(x[[2]],opt.trans,sig.trans)
+w
 
+# The same set of gene, varying Ne, toxicity, and selection on Q
+Ne.all=c(1e2,1e3,1e4,1e5)
+lambda.scale.all=c(.1,1,10)
+opt.trans.all=exp(c(-2,-1,0,1,2))
+par.all=rep(0,3)
+for(i in 1:length(Ne.all)){
+	for(j in 1:length(lambda.scale.all)){
+		for(k in 1:length(opt.trans.all)){
+			par.all=rbind(par.all,c(Ne.all[i],lambda.scale.all[j],opt.trans.all[k]))
+		}
+	}
+}
+par.all=par.all[2:nrow(par.all),]
+
+Nrep=100
+lv.out=matrix(0,nrow=nrow(par.all),ncol=Nrep) # Median modification level
+trans.out=matrix(0,nrow=nrow(par.all),ncol=Nrep) # End-point Q
+fitness.out=matrix(0,nrow=nrow(par.all),ncol=Nrep) # End-point finess
+for(c in 1:nrow(par.all)){
+	Ne=par.all[c,1]
+	lambda.all=rep(1e-3,ngene)*par.all[c,2]
+	opt.trans=par.all[c,3]
+	for(n in 1:Nrep){
+		x=sim.evo.2(type.all,nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start)
+		lv=x[[1]][,2]/(x[[1]][,2]+x[[1]][,1])
+		lv.out[c,n]=median(lv)
+		trans.out[c,n]=x[[2]]
+		w=1
+		for(i in 1:ngene){
+			w=w*fitness.prod(x[[1]][i,],selection.all[[i]])
+		}
+		w=w*fitness.stab(x[[2]],opt.trans,sig.trans)
+		fitness.out[c,n]=w
+	}
+}
 

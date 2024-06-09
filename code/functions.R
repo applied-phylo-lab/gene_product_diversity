@@ -205,6 +205,135 @@ tm.type.2 <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=c(0,0),gamma_0,
 	return(mat)
 }
 
+# Simulate cis-trans coevolution
+# Two isoforms per gene, one functional and one deleterious
+sim.evo<-function(nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start,opt.trans,sig.trans){
+	nmut=rpois(1,lambda=u.trans[1]*2*Ne*T)
+	if(nmut>=T){
+		return("error")
+	}else{
+		ngene=length(nloci.all)
+		tm.all=list()
+		distr.all=list()
+		v.all=start[[1]]
+		trans=start[[2]]
+		beta.all=rep(0,ngene)
+		z.all=matrix(0,nrow=ngene,ncol=2)
+		for(i in 1:ngene){
+			tm.all[[i]]=tm(nloci.all[i],u.cis,selection.all[[i]],Ne,alpha.all[i],trans,C,epsilon,gamma_0.all[i],gamma_1.all[i])
+			distr.all[[i]]=rep(0,nloci.all[i]+1);distr.all[[i]][v.all[i]+1]=1 # Starting distribution of cis- gv; probability of the assigned starting value is 1
+			beta.all[i]=beta.calc(v.all[i]/nloci.all[i],trans,C,epsilon)
+			z.all[i,]=g2p(alpha.all[i],beta.all[i],gamma_0.all[i],gamma_1.all[i])
+		}
+		if(nmut>0){
+			tmut=sort(sample(1:T,nmut))
+			t.last=0
+			for(j in 1:nmut){
+				t=tmut[j]
+				w0=1
+				for(i in 1:ngene){
+					distr.all[[i]]=distr.all[[i]]%*%(tm.all[[i]] %^% (t-t.last)) # Calculate distribution at the time point under consideration
+					v.all[i]=sample(0:nloci.all[i],1,prob=distr.all[[i]])
+					w0=w0*fitness.prod(z.all[i,],selection.all[[i]])
+				}
+				w0.trans=fitness.stab(trans,opt.trans,sig.trans)
+				w0=w0*w0.trans
+				trans.mut=exp(log(trans)+rnorm(1,mean=0,sd=u.trans[2]))
+				w1=1
+				beta.mut=rep(0,ngene)
+				z.mut=matrix(0,nrow=ngene,ncol=2)
+				for(i in 1:ngene){
+					beta.mut[i]=beta.calc(v.all[i]/nloci.all[i],trans.mut,C,epsilon)
+					z.mut[i,]=g2p(alpha.all[i],beta.mut[i],gamma_0.all[i],gamma_1.all[i])
+					w1=w1*fitness.prod(z.mut[i,],selection.all[[i]])
+				}
+				w1.trans=fitness.stab(trans.mut,opt.trans,sig.trans)
+				w1=w1*w1.trans
+				fp=fix.prob(w0,w1,Ne)
+				if.fix=rbinom(n=1,size=1,prob=fp)
+				if(if.fix==1){
+					trans=trans.mut
+					beta.all=beta.mut
+					z.all=z.mut
+					for(i in 1:ngene){
+						tm.all[[i]]=tm(nloci.all[i],u.cis,selection.all[[i]],Ne,alpha.all[i],trans.mut,C,epsilon,gamma_0.all[i],gamma_1.all[i])
+					}
+				}
+				t.last=t
+			}
+			for(i in 1:ngene){
+				distr.all[[i]]=distr.all[[i]]%*%(tm.all[[i]] %^% (T-t.last)) # Calculate distribution at the time point under consideration
+				v.all[i]=sample(0:nloci.all[i],1,prob=distr.all[[i]])
+				beta.all[i]=beta.calc(v.all[i]/nloci.all[i],trans,C,epsilon)
+				z.all[i,]=g2p(alpha.all[i],beta.all[i],gamma_0.all[i],gamma_1.all[i])
+			}
+		}
+		return(list(z.all,trans,v.all))
+	}
+}
+
+# Simulate cis-trans coevolution
+# Two modified isoforms per gene, one functional and one deleterious
+sim.evo.type.2<-function(nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.gamma,trans,C,epsilon,start){
+	nmut=rpois(1,lambda=u.gamma[1]*2*Ne*T)
+	if(nmut>=T){
+		return("error")
+	}else{
+		ngene=length(nloci.all)
+		tm.all=list()
+		distr.all=list()
+		v.all=start[[1]]
+		gamma_2=start[[2]]
+		beta.all=matrix(0,nrow=ngene,ncol=2)
+		z.all=matrix(0,nrow=ngene,ncol=3)
+		for(i in 1:ngene){
+			tm.all[[i]]=tm.type.2(nloci.all[i],u.cis,selection.all[[i]],Ne,alpha.all[i],trans,C,epsilon,gamma_0.all[i],c(gamma_1.all[i],gamma_2))
+			distr.all[[i]]=rep(0,nloci.all[i]+1);distr.all[[i]][v.all[i]+1]=1 # Starting distribution of cis- gv; probability of the assigned starting value is 1
+			beta.all[i,]=beta.calc.type.2(v.all[i]/nloci.all[i],trans,C,epsilon)
+			z.all[i,]=g2p(alpha.all[i],beta.all[i,],gamma_0.all[i],c(gamma_1.all[i],gamma_2))
+		}
+		if(nmut>0){
+			tmut=sort(sample(1:T,nmut))
+			t.last=0
+			for(j in 1:nmut){
+				t=tmut[j]
+				w0=1
+				for(i in 1:ngene){
+					distr.all[[i]]=distr.all[[i]]%*%(tm.all[[i]] %^% (t-t.last)) # Calculate distribution at the time point under consideration
+					v.all[i]=sample(0:nloci.all[i],1,prob=distr.all[[i]])
+					beta.all[i,]=beta.calc.type.2(v.all[i]/nloci.all[i],trans,C,epsilon)
+					z.all[i,]=g2p(alpha.all[i],beta.all[i,],gamma_0.all[i],c(gamma_1.all[i],gamma_2))
+					w0=w0*fitness.prod(z.all[i,],selection.all[[i]])
+				}
+				gamma_2.mut=exp(log(gamma_2)+rnorm(1,mean=0,sd=u.gamma[2]))
+				w1=1
+				z.mut=matrix(0,nrow=ngene,ncol=3)
+				for(i in 1:ngene){
+					z.mut[i,]=g2p(alpha.all[i],beta.all[i,],gamma_0.all[i],c(gamma_1.all[i],gamma_2.mut))
+					w1=w1*fitness.prod(z.mut[i,],selection.all[[i]])
+				}
+				fp=fix.prob(w0,w1,Ne)
+				if.fix=rbinom(n=1,size=1,prob=fp)
+				if(if.fix==1){
+					z.all=z.mut
+					gamma_2=gamma_2.mut
+					for(i in 1:ngene){
+						tm.all[[i]]=tm.type.2(nloci.all[i],u.cis,selection.all[[i]],Ne,alpha.all[i],trans,C,epsilon,gamma_0.all[i],c(gamma_1.all[i],gamma_2))
+					}
+				}
+				t.last=t
+			}
+			for(i in 1:ngene){
+				distr.all[[i]]=distr.all[[i]]%*%(tm.all[[i]] %^% (T-t.last)) # Calculate distribution at the time point under consideration
+				v.all[i]=sample(0:nloci.all[i],1,prob=distr.all[[i]])
+				beta.all[i,]=beta.calc.type.2(v.all[i]/nloci.all[i],trans,C,epsilon)
+				z.all[i,]=g2p(alpha.all[i],beta.all[i,],gamma_0.all[i],c(gamma_1.all[i],gamma_2))
+			}
+		}
+		return(list(z.all,gamma_2,v.all))
+	}
+}
+
 # Simulate evolution of the cis- genotypic value as a Markov process
 # Simplest version: 2 isoforms, constant transition matrix (no trans- substitutions, no environmental change), all cis- loci have equal effect size (i.e., no. of states = no. of loci+1) and mutational spectrum
 # Input: starting genotypic value, transition matrix, time

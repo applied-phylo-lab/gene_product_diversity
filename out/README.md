@@ -5,3 +5,5 @@ out-editing-type.txt contains expected modification level of editing-type gene p
 out-splicing-type.txt contains expected modification level of splicing-type gene product modifications under different conditions.
 
 cis-trans-coevolution.zip contains results of simulations where cis- and trans-acting loci both evolved. Data files are organized according to the number of cis-loci (l), duration of simulation as a multiple of 10*7 (T), and width of fitness function for the trans- genotypic value (sig).
+
+Files with "out_sim_tree" in the name are results of simulations along a tree. Two files contain deleterious and neutral modification events, respectively.

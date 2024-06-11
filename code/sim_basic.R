@@ -1,9 +1,8 @@
-# Basic setting
-# 2 isoforms (I_0 functional, I_1 deleterious), all loci have equal effects
+# Basic setting (editing-type modification)
+# 2 isoforms (unmidified I_0 is functional, modified I_1 is toxic), all loci have equal effects
 
 library(expm)
 library(ggplot2)
-#library(MASS)
 
 # Calculate normalized cis-genotypic value
 # Input: genotype (a vector of 0 and 1), effect sizes of effector allele at all loci (a vector)
@@ -123,17 +122,18 @@ tm <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=0,gamma_0,gamma_1,eq=N
 }
 
 
-Ne.all=c(1e2,1e3,1e4,1e5)
-alpha.all=exp(0:5)
-nloci.all=1:10
-u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5))
-trans.all=(1:10)/5
-C=1
-gamma_0=1;gamma_1=1
+Ne.all=c(1e2,1e3,1e4,1e5) # Effective population sizes to consider
+alpha.all=exp(0:5) # Optimum to be set as alpha/gamma_0
+nloci.all=1:10 # Number of cis-loci 
+u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5)) # Per-locus mutation rates
+trans.all=(1:10)/5 # Trans-genotypic value
+C=1 # Scaling between cis-genotypic value and regulatory efffect
+gamma_0=1;gamma_1=1 # Decay rates
 T=1e8 # Time (may not be enough to reach stationary distribution, final dependent on initial state)
 sig=10 # Width of fitness function for P_0
 lambda=1e-3 # Strength of selection on P_1
 
+# Get a data matrix containing parameter combinations to consider
 comb.all=rep(0,6)
 for(Ne in Ne.all){
 	for(alpha in alpha.all){
@@ -154,25 +154,27 @@ rownames(comb.all)=NULL
 # Output data matrix (columns: mean normalized cis- genotypic value, isoform abundances and modification frequency based on the mean gv)
 out=matrix(0,nrow=nrow(comb.all),ncol=4)
 for(i in 1:nrow(comb.all)){
+	# Read parameter values of the row
 	Ne=comb.all[i,1]
 	alpha=comb.all[i,2]
 	nloci=comb.all[i,3]
 	trans=comb.all[i,4]
 	u=comb.all[i,5:6]
-	opt=alpha/gamma_0 # Make optimal P_0 the value reached in the absence of mis-splicing
+	opt=alpha/gamma_0
 	par=list(c(opt,sig),lambda)
-	mat=tm(nloci,u,par,Ne,alpha,trans,C,gamma_0,gamma_1)
-	start=rep(0,nloci+1);start[1]=1
-	distr=start%*%(mat %^% T)
-	v_mean=sum((distr*(0:nloci))/nloci)
-	beta_mean=beta.calc(v_mean,trans,C)
-	phe=g2p(alpha,beta_mean,gamma_0,gamma_1)
-	out[i,1]=v_mean;out[i,2:3]=phe;out[i,4]=phe[2]/sum(phe)
-	if(is.complex(out[i,1])==TRUE|is.complex(out[i,2])==TRUE|is.complex(out[i,3])==TRUE|is.complex(out[i,4])==TRUE){
+	mat=tm(nloci,u,par,Ne,alpha,trans,C,gamma_0,gamma_1) # Obtain transition matrix
+	start=rep(0,nloci+1);start[1]=1 # Start from zero cis-genotypic value
+	distr=start%*%(mat %^% T) # Distribution of cis-genotypic value
+	v_mean=sum((distr*(0:nloci))/nloci) # Mean cis-genotypic value
+	beta_mean=beta.calc(v_mean,trans,C) # Calculate the corresponding beta
+	phe=g2p(alpha,beta_mean,gamma_0,gamma_1) # Calculate the corresponding isoform abundances
+	out[i,1]=v_mean;out[i,2:3]=phe;out[i,4]=phe[2]/sum(phe) # Data to write: mean cis-genotypic value, isoform abundances, modification level
+	if(is.complex(out[i,1])==TRUE|is.complex(out[i,2])==TRUE|is.complex(out[i,3])==TRUE|is.complex(out[i,4])==TRUE){ # If complex number is produced, there is something wrong
 		break
 	}
 }
 
+# Write data file
 out=data.frame(comb.all,out)
 colnames(out)=c("Ne","alpha","l","Q","u01","u10","v","P_0","P_1","frac")
 out$alpha=log(out$alpha)
@@ -200,7 +202,7 @@ ggsave("plot_basic.pdf",plot=g,width=6,height=5)
 #ggsave("plot_basic_mb2.pdf",plot=g,width=6,height=5)
 
 # Check effect of expression level
-l.test=2
+l.test=2 # Choose a subset of rows with the same number of cis-loci 
 sub=which((d$l==l.test)&(d$Q==1)&(d$u01==d$u10))
 dsub=d[sub,]
 dsub$alpha=dsub$alpha-log(gamma_0) # convert to optimum of P_0

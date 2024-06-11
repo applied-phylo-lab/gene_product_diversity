@@ -1,5 +1,7 @@
 This directory contains codes used for simulations and/or generating figures.
 
+functions.R contains functions that are used repeatedly in other files.
+
 sim_basic.R generates model predictions for an individual editing-type modification events with only the cis-loci evolving.
 
 sim_as.R generates model predictions for an individual splicing-type modification events with only the cis-loci evolving.

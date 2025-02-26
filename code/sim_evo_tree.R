@@ -1,7 +1,7 @@
-# Generate transcriptome-wide distributions
+# Simulate the evolution of editing-type modifications, and obtain a distribution of modification level across genes/modification events (different modification events assumed to evolve independently)
+
 library(expm) # Required to do matrix exponential (in A %^% T form)
 library(ggplot2)
-#library(MASS)
 
 # Calculate normalized cis-genotypic value
 # Input: genotype (a vector of 0 and 1), effect sizes of effector allele at all loci (a vector)
@@ -121,13 +121,13 @@ tm <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=0,gamma_0,gamma_1,eq=N
 }
 
 # Read or simulate phylogenetic tree
-tr=read.tree(text="((oct:5,bim:5):270,(squ:170,sep:170):105);")
+tr=read.tree(text="((oct:5,bim:5):270,(squ:170,sep:170):105);") # Coleoidea tree used in the study
 
-# Rescale tree
+# Rescale tree such that tree height is of the desired value
 scale=1e6
 tr$edge.length=tr$edge.length*scale
 
-# Extract external branches
+# Label external branches among all branches for convenience of later analysis
 sp=c()
 for(i in 1:nrow(tr$edge)){
 	des=which(tr$edge[,1]==tr$edge[i,2])
@@ -145,30 +145,34 @@ for(l in 1:10){
 	pgv[[l]]=pgv[[l]]/(sum(pgv[[l]]))
 }
 
-# Parameter values
+# Parameter values (All can be custom set)
 # Gene-specific parameters sampled from pre-chosen distributions
 Ne=1e3
-u=c(1e-9,1e-9)
-trans=1
+u=c(1e-9,1e-9) # Mutation rates at cis-loci (to and from effector allele, respectively)
+trans=1 # trans-genotypic value characterizing modification activity
 
-n1=0 # I_0 is functional
-n2=0 # I_1 is functional
-n3=1e4 # I_0 and I_1 are functionally equivalent
-ngene=n1+n2+n3
-type.all=c(rep(1,n1),rep(2,n2),rep(3,n3))
+# Number of different types of modification events
+n1=0 # Number of modification events where the I_0 is functional
+n2=0 # Number of modification events where the I_1 is functional
+n3=1e4 # Number of neutral modification events, where both isoforms are functional
+ngene=n1+n2+n3 # Total number of modification events
+type.all=c(rep(1,n1),rep(2,n2),rep(3,n3)) # Assign 'types' to modification events
 alpha.all=exp(rnorm(ngene,mean=0,sd=1)) # Expression rate, sampled from log-normal distribution
 nloci.all=sample(1:10,ngene,replace=TRUE) # Number of cis- loci, sampled uniformly from a pre-chosen set
 C.all=rexp(ngene,rate=10) # Parameter characterizing relationship between cis- loci and enzyme-substrate affinity, sampled from log-normal distribution
-gamma_0.all=rep(1,ngene) # Decay rate of I_0, distribution type TBD
-gamma_1.all=rep(1,ngene) # Decay rate of I_1, distribution type TBD
-sig.all=rep(10,ngene) # Width of Gaussian fitness function (for P_0 or P_1); sample "importance" first, then take reciprocal to be width
-lambda.all=rep(1e-3,ngene) # Strength of selection on P_1; distribution type TBD
-epsilon.all=rep(1e-4,ngene)
+gamma_0.all=rep(1,ngene) # Decay rate of I_0
+gamma_1.all=rep(1,ngene) # Decay rate of I_1
+sig.all=rep(10,ngene) # Width of Gaussian fitness function characterizing strength of stabilizing selection on abundance of the functional isoform
+lambda.all=rep(1e-3,ngene) # Strength of selection on abundance of deleterious isoform (for neutral modifications, the value is assigned by default but unused for fitness calculation)
+epsilon.all=rep(1e-4,ngene) # Rate of non-specific, cis-genotype-independent modification
 
-comb.all=data.frame(alpha.all,nloci.all,C.all,gamma_0.all,gamma_1.all,type.all,sig.all,lambda.all,epsilon.all)
+comb.all=data.frame(alpha.all,nloci.all,C.all,gamma_0.all,gamma_1.all,type.all,sig.all,lambda.all,epsilon.all) # Data matrix containing each gene's parameter
 
+# Matrix for writing output
+# Each row for a modification event, each coloumn for a terminal node (a species), values are modification levels
 out=matrix(0,nrow=ngene,ncol=length(sp))
 for(i in 1:ngene){
+	# Read paramters for the gene under consideration
 	alpha=comb.all[i,1]
 	nloci=comb.all[i,2]
 	C=comb.all[i,3]
@@ -177,6 +181,8 @@ for(i in 1:ngene){
 	type=comb.all[i,6]
 	sig=comb.all[i,7]
 	epsilon=comb.all[i,9]
+	
+	# Read modification type, and arrange selection parameters into the right format
 	if(type==3){ # Modification is neutral
 		eq=c(0,1)
 		par=list(c(alpha/gamma_0,sig),NULL)
@@ -189,42 +195,42 @@ for(i in 1:ngene){
 			par=list(lambda,c(alpha/gamma_1,sig))
 		}
 	}
-	mat=tm(nloci,u,par,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1,eq)
-	start=rep(0,nloci+1);v0=sample(0:(nloci),1,prob=pgv[[nloci]]);start[v0+1]=1
-	v.end=rep(0,nrow(tr$edge))
-	lv.end=rep(0,nrow(tr$edge))
+	
+	mat=tm(nloci,u,par,Ne,alpha,trans,C,epsilon,gamma_0,gamma_1,eq) # Get transition matrix
+	start=rep(0,nloci+1);v0=sample(0:(nloci),1,prob=pgv[[nloci]]);start[v0+1]=1 # Initial cis-genotype (no effector allele)
+	
+	v.end=rep(0,nrow(tr$edge)) # Vector to store end-point cis-genotypic value for each branch
+	lv.end=rep(0,nrow(tr$edge)) # Vector to store end-point modification level for each branch
+	
+	# Go through each branch of the tree and simulate evolution along each branch
 	for(j in 1:nrow(tr$edge)){
-		ances=which(tr$edge[,2]==tr$edge[j,1])
-		if(length(ances)==0){
+		ances=which(tr$edge[,2]==tr$edge[j,1]) # Find ancestral node
+		if(length(ances)==0){ # If the ancestral node is the root, assign the initial cis-genotype as the branch's starting point
 			start.edge=start
-		}else{
+		}else{ # If the ancestral node is not the root, assign the end-point cis-genotype of the ancestral branch as the focal branch's starting point
 			start.edge=rep(0,nloci+1)
 			start.edge[v.end[ances]+1]=1
 		}
-		T=as.integer(tr$edge.length[j])
-		distr=start.edge%*%(mat %^% T)
-		v.end[j]=sample(0:nloci,1,prob=distr)
-		beta=beta.calc(v.end[j]/nloci,trans,C,epsilon)
-		z=g2p(alpha,beta,gamma_0,gamma_1)
-		lv.end[j]=z[2]/sum(z)
+		T=as.integer(tr$edge.length[j]) # Convert branch length to an integer
+		distr=start.edge%*%(mat %^% T) # Get probability distribution of cis-genotypic value at the end
+		v.end[j]=sample(0:nloci,1,prob=distr) # Sample a cis-genotypic value from the distribution
+		beta=beta.calc(v.end[j]/nloci,trans,C,epsilon) # Calculate the corresponding modification rate
+		z=g2p(alpha,beta,gamma_0,gamma_1) # Calculate isoform abundances
+		lv.end[j]=z[2]/sum(z) # Get modification level
 	}
-	out[i,]=lv.end[sp]
+	out[i,]=lv.end[sp] # Write end-point modification levels of terminal branches
 }
 
+# Write data file
 colnames(out)=c("lv_bim","lv_oct","lv_squ","lv_sep")
 d=data.frame(comb.all,out)
 fn=paste("out_sim_tree_",n1,"_",n2,"_",n3,".txt",sep="")
 write.table(d,file=fn,sep="\t")
 
-# Euclidean distances
-sqrt(sum((log(out[,1]/out[,2]))^2))
-sqrt(sum((log(out[,3]/out[,4]))^2))
-sqrt(sum((log(out[,2]/out[,4]))^2))
-
-# Re-read for analysis
-d1<-read.table("out_sim_tree_0_0_10000.txt",sep="\t")
-d2<-read.table("out_sim_tree_10000_0_0.txt",sep="\t")
-d=rbind(d1,d2)
+# Re-read for analysis, if data needed are not in the R environment
+d1<-read.table("out_sim_tree_0_0_10000.txt",sep="\t") # All modifications are neutral
+d2<-read.table("out_sim_tree_10000_0_0.txt",sep="\t") # All modifications are deleterious
+d=rbind(d1,d2) # Merge into one data frame
 
 # A histogram for modification level distribution
 g<-ggplot(d,aes(x=lv_oct))
@@ -232,13 +238,12 @@ g=g+geom_histogram()
 g=g+theme_classic()+xlab("Editing level (octopus)")+ylab("Number of editing sites")
 ggsave(g,file="distr_lv_sim.pdf",width=6,height=5)
 
-# Examine phylogenetic distance
-ld=log(d[,10:13])#;colnames(ld)=c("Bimac","Octopus","Squid","Cuttlefish")
-ed=dist(t(ld),method="euclidean")
-edm=as.matrix(ed)
-tr.lv=nj(ed)
-plot(tr.lv,type="unrooted",no.margin=TRUE,show.tip.label=FALSE,edge.width=4)
-plot(tr,type="unrooted",no.margin=TRUE,show.tip.label=FALSE,edge.width=4)
+# Plot the phylogenetic tree and the editome tree to compare their structures
+ld=log(d[,10:13]) # Log-transform modification levels
+ed=dist(t(ld),method="euclidean");edm=as.matrix(ed) # Euclidean distances between species, arranged into a distance matrix
+tr.lv=nj(ed) # Neighbor-joining tree
+plot(tr.lv,type="unrooted",no.margin=TRUE,show.tip.label=FALSE,edge.width=4) # Plot modification level tree
+plot(tr,type="unrooted",no.margin=TRUE,show.tip.label=FALSE,edge.width=4) # Plot phylogenetic tree
 
 
 

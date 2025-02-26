@@ -1,5 +1,5 @@
-# Basic setting (editing-type modification)
-# 2 isoforms (unmidified I_0 is functional, modified I_1 is toxic), all loci have equal effects
+# Generate model predictions regarding editing-type modification
+# 2 isoforms (unmidified I_0 is functional, modified I_1 is toxic), all cis-loci have equal effect sizes
 
 library(expm)
 library(ggplot2)
@@ -123,15 +123,15 @@ tm <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=0,gamma_0,gamma_1,eq=N
 
 
 Ne.all=c(1e2,1e3,1e4,1e5) # Effective population sizes to consider
-alpha.all=exp(0:5) # Optimum to be set as alpha/gamma_0
-nloci.all=1:10 # Number of cis-loci 
-u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5)) # Per-locus mutation rates
-trans.all=(1:10)/5 # Trans-genotypic value
+alpha.all=exp(0:5) # Rate of expression; optimum to be set as alpha/gamma_0
+nloci.all=1:10 # All numbers of cis-loci to examine
+u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5)) # Per-locus mutation rates (each vector contains u01 and u10, respectively)
+trans.all=(1:10)/5 # trans-genotypic value characterizing modification activity
 C=1 # Scaling between cis-genotypic value and regulatory efffect
-gamma_0=1;gamma_1=1 # Decay rates
+gamma_0=1;gamma_1=1 # Decay rates of unmodified and modified isoforms, respectively
 T=1e8 # Time (may not be enough to reach stationary distribution, final dependent on initial state)
-sig=10 # Width of fitness function for P_0
-lambda=1e-3 # Strength of selection on P_1
+sig=10 # Width of fitness function, characterizing strength of stabilizing on abundance of the functional isoform (P_0)
+lambda=1e-3 # Strength of selection on abundance of the deleterious isoform (P_1)
 
 # Get a data matrix containing parameter combinations to consider
 comb.all=rep(0,6)
@@ -151,7 +151,7 @@ comb.all=comb.all[2:nrow(comb.all),]
 rownames(comb.all)=NULL
 
 # Get expected mean phenotype when I_0 is functional and I_1 is deleterious
-# Output data matrix (columns: mean normalized cis- genotypic value, isoform abundances and modification frequency based on the mean gv)
+# Output data matrix (columns: mean normalized cis- genotypic value, isoform abundances corresponding to the mean cis-genotypic value, modification level corresponding to the mean cis-genotypic value)
 out=matrix(0,nrow=nrow(comb.all),ncol=4)
 for(i in 1:nrow(comb.all)){
 	# Read parameter values of the row
@@ -180,15 +180,16 @@ colnames(out)=c("Ne","alpha","l","Q","u01","u10","v","P_0","P_1","frac")
 out$alpha=log(out$alpha)
 write.table(out,file="out_basic.txt",sep="\t")
 
-# Plot a subset
-d<-read.table("out_basic.txt",sep="\t",header=TRUE)
+# Make plots using subsets of the dataset
+d<-read.table("out_basic.txt",sep="\t",header=TRUE) # Re-read the data file, if not already in the R environment
 
-# Check effect of Ne, nloci, and mutational bias
+# Check effect of Ne, nloci, and mutational bias on the phenotype
+# Pick a subset based on mutational bias (run one of the 3 following lines)
 sub=which((d$alpha==0)&(d$Q==1)&(d$u01==d$u10)) # Rows with mutational bias
 #sub=which((d$alpha==0)&(d$Q==1)&(d$u01>d$u10)) # Rows with mutational bias towards the effector allele
 #sub=which((d$alpha==0)&(d$Q==1)&(d$u01<d$u10)) # Rows with mutational bias towards the null allele
 dsub=d[sub,]
-dsub$l=factor(dsub$l,levels=sort(unique(dsub$l)),ordered=TRUE)
+dsub$l=factor(dsub$l,levels=sort(unique(dsub$l)),ordered=TRUE) # Factorize the number of cis-loci for plotting
 g<-ggplot(dsub,aes(x=log10(Ne),y=frac,colour=l))
 g=g+geom_point()+geom_line()+scale_color_brewer(palette="Paired")
 g=g+theme_classic()
@@ -202,10 +203,10 @@ ggsave("plot_basic.pdf",plot=g,width=6,height=5)
 #ggsave("plot_basic_mb2.pdf",plot=g,width=6,height=5)
 
 # Check effect of expression level
-l.test=2 # Choose a subset of rows with the same number of cis-loci 
-sub=which((d$l==l.test)&(d$Q==1)&(d$u01==d$u10))
+l.test=2 # Choose a subset of rows with the same number of cis-loci; reset it to examine a different subset and produce a corresponding plot
+sub=which((d$l==l.test)&(d$Q==1)&(d$u01==d$u10)) # A subset with no mutational bias
 dsub=d[sub,]
-dsub$alpha=dsub$alpha-log(gamma_0) # convert to optimum of P_0
+dsub$alpha=dsub$alpha-log(gamma_0) # convert rate of expression to optimal level of the functional isoform
 dsub$alpha=factor(dsub$alpha,levels=sort(unique(dsub$alpha)),ordered=TRUE)
 g<-ggplot(dsub,aes(x=log10(Ne),y=frac,colour=alpha))
 g=g+geom_point()+geom_line(linewidth=1.5)+scale_color_brewer(palette="Paired")

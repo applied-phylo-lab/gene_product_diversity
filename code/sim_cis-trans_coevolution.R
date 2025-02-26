@@ -2,9 +2,6 @@
 # Selective advantage of trans- factor mediated by something other than focal modifications 
 
 library(expm)
-#library(ggplot2)
-
-setwd("/Users/daohanji/Desktop/gene_product_diversity/")
 
 # Calculate normalized cis-genotypic value
 # Input: genotype (a vector of 0 and 1), effect sizes of effector allele at all loci (a vector)
@@ -201,17 +198,17 @@ opt.trans=2
 sig.trans=20
 
 # Assign gene-specific parameters
-n1=100;n2=0;ngene=n1+n2
-type.all=c(rep(1,n1),rep(2,n2))
-#nloci.all=sample(1:10,ngene,replace=TRUE)
-nloci.all=rep(2,ngene)
-#alpha.all=exp(rnorm(ngene,mean=0,sd=1));alpha.all=sort(alpha.all)
-alpha.all=rep(1,ngene)
-gamma_0.all=rep(1,ngene) # Decay rate of I_0, distribution type TBD
-gamma_1.all=rep(1,ngene) # Decay rate of I_1, distribution type TBD
-#sig.all=1/(10^(rnorm(ngene,mean=-1,sd=0.1))) # Strength of stabilizing selection on expression level
-sig.all=rep(10,ngene)
-lambda.all=rep(1e-3,ngene)
+n1=100 # The number of deleterious modification events (the unmodified isoform is functional); can be custom set
+n2=0 # The number of beneficial modification events (the modified isoform is functional); can be custom set
+ngene=n1+n2 # The total number of modification events
+type.all=c(rep(1,n1),rep(2,n2)) # Assign 'type' to each modification event
+nloci.all=rep(2,ngene) # The number of cis-loci affecting each modification event; can be custom set
+alpha.all=rep(1,ngene) # Rate at which gene product is produced; can be custom set
+gamma_0.all=rep(1,ngene) # Decay rate of unmodified isoform; can be custom set
+gamma_1.all=rep(1,ngene) # Decay rate of modified isoform; can be custom set
+sig.all=rep(10,ngene) # Strength of stabilizing selection on expression level
+lambda.all=rep(1e-3,ngene) # Strength of selection on abundance of the deleterious isoform
+# Generate a list that contains information about selection
 selection.all=list()
 for(i in 1:ngene){
 	if(type.all[i]==1){ # Deleterious
@@ -221,58 +218,36 @@ for(i in 1:ngene){
 	}
 }
 
-# Null distribution of cis- genotypic value
-#pgv=list()
-#for(l in 1:10){
-#	pgv[[l]]=rep(0,l+1)
-#	for(i in 0:l){
-#		pgv[[l]][i+1]=choose(l,i)
-#	}
-#	pgv[[l]]=pgv[[l]]/(sum(pgv[[l]]))
-#}
-
-# Starting cis- and trans- genotypic values
-#start=list(rep(0,ngene),opt.trans)
-#for(i in 1:ngene){
-#	if(type.all[i]==1){
-#		start[[1]][i]=sample(0:(nloci.all[i]),1,prob=pgv[[nloci.all[i]]])
-#	}else{
-#		start[[1]][i]=nloci.all[i]
-#	}
-#}
-start=list(as.integer(nloci.all/2),opt.trans) # Assuming every gene's starting cis- gv is intermediate
-
-# Test run
-#x=sim.evo.2(nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start);x[[2]]
-# End-point fitness
-#w=1
-#for(i in 1:ngene){
-#	w=w*fitness.prod(x[[1]][i,],selection.all[[i]])
-#}
-#w=w*fitness.stab(x[[2]],opt.trans,sig.trans);w
-
-out.dir=paste("/Users/daohanji/Desktop/gene_product_diversity/out/trans/l=",nloci.all[1],"/sig=",sig.trans,sep="")
-setwd(out.dir)
-out.dir.sub=paste("./T=",T/1e7,sep="")
+out.dir="your_dir";setwd(out.dir) # Set the output directory
+out.dir.sub=paste("./T=",T/1e7,sep="") # Create a directory for results from simulations of the given timescale
 setwd(out.dir.sub)
 # The same set of gene, varying Ne, toxicity, and selection on Q
-Ne.all=10^(c(2,2.5,3,3.5,4,4.5,5))
-Nrep=50
+Ne.all=10^(c(2,2.5,3,3.5,4,4.5,5)) # All effective population sizes to be examined
+Nrep=50 # The number of replicate lineages to run for each parameter combination
 for(Ne in Ne.all){
+	# Vectors/matrices to store results
 	lv.out=matrix(nrow=Nrep,ncol=ngene)
 	trans.out=rep(0,Nrep)
 	fitness.out=rep(0,Nrep)
+	
+	# Simulate evolution for each lineage
 	for(n in 1:Nrep){
 		x=sim.evo(nloci.all,alpha.all,gamma_0.all,gamma_1.all,selection.all,T,Ne,u.cis,u.trans,C,epsilon,start,opt.trans,sig.trans)
+
+		# Extract information from simulation function's output
 		lv.out[n,]=x[[1]][,2]/(x[[1]][,2]+x[[1]][,1])
 		trans.out[n]=x[[2]]
+		
+		# Calculate fitness
 		w=1
 		for(i in 1:ngene){
-			w=w*fitness.prod(x[[1]][i,],selection.all[[i]])
+			w=w*fitness.prod(x[[1]][i,],selection.all[[i]]) # Fitness with respect to each modification event multiplied to the 'base' fitness
 		}
-		w=w*fitness.stab(x[[2]],opt.trans,sig.trans)
+		w=w*fitness.stab(x[[2]],opt.trans,sig.trans) # Fitness with respect to Q multipled to the 'base' fitness
 		fitness.out[n]=w
 	}
+	
+	# Write data files
 	fn1=paste("lv_out_",ngene,"_",log10(Ne),".txt",sep="")
 	fn2=paste("gamma_2_out_",ngene,"_",log10(Ne),".txt",sep="")
 	fn3=paste("fitness_out_",ngene,"_",log10(Ne),".txt",sep="")

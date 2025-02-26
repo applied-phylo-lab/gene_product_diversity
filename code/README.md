@@ -1,13 +1,19 @@
-This directory contains codes used for simulations and/or generating figures.
+This directory contains codes used for simulations (under a sequential fixation regime) and/or generating figures.
 
-functions.R contains functions that are used repeatedly in other files.
+#functions.R 
+Contains functions that are used (often repeatedly) in other files. 
 
-sim_basic.R generates model predictions for an individual editing-type modification events with only the cis-loci evolving.
+#sim_basic.R 
+For generating model predictions for an editing-type modification event with only the cis-loci evolving (results shown in Fig. 2).
 
-sim_as.R generates model predictions for an individual splicing-type modification events with only the cis-loci evolving.
+#sim_as.R
+For generating model predictions for of an splicing-type modification event with only the cis-loci evolving (results shown in Fig. S1-S2).
 
-sim_evo.R is for simulating cis-trans coevolution.
+#sim_evo.R
+For simulating the coevolution of cis-loci underlying an arbitrary number of editing-type modification events and a trans-genotypic value characterizing the global modification activity (results shown in Fig. 3 and Fig. S3-S4).
 
-sim_evo_tree.R is for simulating cis-loci evolution along a phylogenetic tree.
+#sim_evo_tree.R
+For simulating the evolution of an editing-type modification events along a phylogenetic tree, with only the cis-loci evolving (results shown in Fig. 4 and Fig. S5).
 
-plot_sim.R is for analyzing results and generating some of the plots.
+#plot_sim.R
+For analyzing results and generating of the plots.

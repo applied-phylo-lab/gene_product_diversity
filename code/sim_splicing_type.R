@@ -1,5 +1,5 @@
+# Generate model predictions regarding splicing-type modification
 # 3 isoforms, I_0, I_1, and I_2; I_1 is functional while I_2 is deleterious
-# Representing alternative splicing
 
 library(expm)
 library(ggplot2)
@@ -125,33 +125,20 @@ tm.type.2 <- function(nloci,u,selection,Ne,alpha,trans,C,epsilon=c(0,0),gamma_0,
 	return(mat)
 }
 
-# Test using arbitrary numbers
-n0=1;n1=50;nloci=n0+n1
-gt=c(rep(0,n0),rep(1,n1));effect=rep(1,length(gt));cis=cis.gv(gt,effect)
-trans=100;C=c(1,1);epsilon=c(0,0);beta=beta.calc.type.2(cis,trans,C,epsilon)
-alpha=10;gamma_0=0;gamma=c(1,100);z=g2p(alpha,beta,gamma_0,gamma)
-par=list(NULL,c(alpha/gamma[1],1),1e-1);Ne=1e3;w=fitness.prod(z,par);pr=fix.prob(1,w,Ne)
-z;w;pr*2e3
-
-u=c(1e-9,1e-9)
-mat=tm.type.2(nloci,u,par,Ne,alpha,trans,C,epsilon,gamma_0,gamma)
-start=rep(0,nloci+1);start[nloci+1]=1
-T=1e8;distr=start%*%(mat %^% T)
-gv=sum(distr*(0:(nloci)));beta=beta.calc.type.2(gv/nloci,trans,C,epsilon);z=g2p(alpha,beta,gamma_0,gamma);z;z[3]/(z[2]+z[3])
-
 # Parameter range
 Ne.all=c(1e2,1e3,1e4,1e5) # Effective population sizes to consider
-alpha.all=exp(0:5) # Optimum to be set as alpha/gamma_1
+alpha.all=exp(0:5) # Rate of expression; optimum to be set as alpha/gamma_1
 nloci.all=10*(1:5) # Number of cis-loci (should be greater than editing-type)
-u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5)) # Per-locus mutation rates
-trans=100 # Trans-genotypic value (should be high enough such that P_0 is much smaller than P_0+P_1+P_2)
+u.all=1e-9*rbind(c(1,1),c(1.5,0.5),c(0.5,1.5)) # Per-locus mutation rates (each vector contains u01 and u10, respectively)
+trans=100 # trans-genotypic value characterizing modification activity (should be high enough such that P_0 is much smaller than P_0+P_1+P_2)
 C=c(1,1) # Scaling between cis- genotypic value and regulatory efffect
 epsilon=c(1,1)*1e-3 # Non-spcific interaction strength
-gamma_0=0;gamma_1=1 # Decay rate of functional isoform
-gamma_2.all=(1:5)*20 # Decay rate of mis-spliced isoform, reflecting efficiency of stop-mediated degradation
+gamma_0=0 # Decay rate of unmodified isoform (set to be 0 for this study)
+gamma_1=1 # Decay rate of functional isoform
+gamma_2.all=(1:5)*20 # Decay rate of mis-spliced isoform, reflecting efficiency of quality-control mechanisms like stop-mediated degradation
 T=1e8 # Time (may not be enough to reach stationary distribution, final dependent on initial state)
-sig=10 # Width of fitness function for P_1
-lambda=1e-3 # Strength of selection on P_2
+sig=10 # Width of fitness function, characterizing strength of stabilizing on abundance of the functional isoform (P_1)
+lambda=1e-3 # Strength of selection on abundance of the deleterious isoform (P_2)
 
 # Get a data matrix containing parameter combinations to consider
 comb.all=rep(0,4)
@@ -170,6 +157,8 @@ for(Ne in Ne.all){
 comb.all=comb.all[2:nrow(comb.all),]
 rownames(comb.all)=NULL
 
+# Get expected mean phenotype when I_1 is functional and I_2 is deleterious
+# Output data matrix (columns: mean normalized cis- genotypic value, modified isoform abundances corresponding to the mean cis-genotypic value, relative abundance of I_2 corresponding to the mean cis-genotypic value)
 out=matrix(0,nrow=nrow(comb.all),ncol=4)
 for(i in 1:nrow(comb.all)){
 	# Read parameter values of the row
@@ -206,7 +195,7 @@ d<-read.table("out_as.txt",sep="\t")
 alpha.test=1;gamma_2.test=100
 sub=which((d$alpha==alpha.test)&(d$gamma_2==gamma_2.test)) # Choose a subset of data with a given combination alpha and gamma_2
 dsub=d[sub,]
-dsub$l=factor(dsub$l,levels=sort(unique(dsub$l)),ordered=TRUE)
+dsub$l=factor(dsub$l,levels=sort(unique(dsub$l)),ordered=TRUE) # Factorize the number of cis-loci for plotting
 g<-ggplot(dsub,aes(x=log10(Ne),y=frac,colour=l))
 g=g+geom_point()+geom_line()+scale_color_brewer(palette="Paired")
 g=g+theme_classic()
